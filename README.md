@@ -150,6 +150,7 @@ GEMINI_API_KEY=tu_api_key
 GEMINI_MODEL=gemini-2.5-pro
 GEMINI_TRANSCRIPTION_MODEL=gemini-2.5-flash
 GEMINI_API_BASE_URL=https://generativelanguage.googleapis.com
+USE_MOCK_LLM=False
 
 JWT_SECRET_KEY=change-me-in-production-please
 JWT_ALGORITHM=HS256
@@ -174,7 +175,7 @@ Swagger quedará disponible en `http://localhost:8000/docs`.
 
 ### 5. Ejecutar la verificación integral
 
-Con la API ya levantada y `GEMINI_API_KEY` configurada:
+Con la API ya levantada y, si usarás Gemini real, con `GEMINI_API_KEY` configurada:
 
 ```bash
 cd backend
@@ -188,8 +189,10 @@ El script cubre:
 - creación de visita
 - subida de una imagen PNG real de 100x100 generada en memoria
 - creación de plantilla
-- generación del borrador con Gemini
+- generación del borrador con Gemini o con el mock local
 - descarga del PDF y validación de tamaño mayor que `0 KB`
+
+Para desarrollo local puedes activar `USE_MOCK_LLM=True` en `backend/.env`. En ese modo, el backend no consume cuota de Gemini y devuelve un reporte forestal simulado con referencias explícitas a la evidencia fotográfica almacenada en MinIO, lo que permite validar la exportación final a PDF sin depender del servicio externo.
 
 ## Estructura del repositorio
 

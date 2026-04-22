@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 
 import { apiPost } from "../../../lib/api-client";
+import { Spinner } from "../../../components/spinner";
 
 type Tone = "formal" | "sencillo" | "tecnico";
 
@@ -77,7 +78,7 @@ export default function NewTemplatePage() {
 
       <form
         onSubmit={handleSubmit}
-        className="space-y-6 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm"
+        className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-8"
       >
         <div className="space-y-2">
           <label htmlFor="template-name" className="text-sm font-medium text-slate-800">
@@ -136,10 +137,18 @@ export default function NewTemplatePage() {
           </p>
           <button
             type="submit"
+            aria-busy={isSubmitting}
             disabled={isSubmitting}
-            className="rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isSubmitting ? "Guardando..." : "Crear plantilla"}
+            {isSubmitting ? (
+              <>
+                <Spinner className="h-4 w-4" />
+                Guardando...
+              </>
+            ) : (
+              "Crear plantilla"
+            )}
           </button>
         </div>
 

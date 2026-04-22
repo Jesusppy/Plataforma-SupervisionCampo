@@ -76,6 +76,12 @@ export default function ProjectsPage() {
         </div>
         <div className="flex gap-3">
           <Link
+            href="/projects/new"
+            className="rounded-xl bg-cyan-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-cyan-500"
+          >
+            Nuevo proyecto
+          </Link>
+          <Link
             href="/visits"
             className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
           >
@@ -149,6 +155,12 @@ export default function ProjectsPage() {
                 </div>
               </dl>
               <div className="mt-6 flex flex-wrap gap-3">
+                <Link
+                  href={`/visits/new?projectId=${project.id}`}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                >
+                  Nueva visita
+                </Link>
                 <Link
                   href="/visits"
                   className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"

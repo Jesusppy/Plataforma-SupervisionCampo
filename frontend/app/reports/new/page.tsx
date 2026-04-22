@@ -133,7 +133,7 @@ export default function NewReportPage() {
 
       <form
         onSubmit={handleGenerate}
-        className="space-y-6 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm"
+        className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-8"
       >
         {resourcesStatus === "error" ? (
           <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
@@ -232,7 +232,7 @@ export default function NewReportPage() {
         </div>
       </form>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-8">
         {generationStatus === "idle" ? (
           <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
             <div className="h-12 w-12 rounded-full bg-slate-100" />

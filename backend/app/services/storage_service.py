@@ -122,7 +122,7 @@ class StorageService:
     ) -> str:
         try:
             async for client in self._get_client():
-                return client.generate_presigned_url(
+                return await client.generate_presigned_url(
                     "get_object",
                     Params={"Bucket": bucket_name, "Key": object_key},
                     ExpiresIn=expires_in_seconds,

@@ -18,12 +18,14 @@ import zlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 
 import httpx
 
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000/api/v1")
 REQUEST_TIMEOUT = httpx.Timeout(90.0, connect=10.0)
+OUTPUT_PDF_PATH = Path(__file__).resolve().parent.parent / "test_output.pdf"
 
 
 class PipelineError(RuntimeError):
@@ -247,7 +249,7 @@ async def create_template_and_generate_report(
     if not context.project_id or not context.visit_id:
         raise PipelineError("Faltan IDs de proyecto o visita para generar el reporte.")
 
-    phase("AI: create template -> generate report with Gemini")
+    phase("AI: create template -> generate report draft")
 
     template_response = await client.post(
         "/templates",
@@ -305,7 +307,7 @@ async def create_template_and_generate_report(
     if not markdown.strip():
         raise PipelineError("Gemini devolvió un reporte vacío.")
 
-    success("Reporte generado con Gemini")
+    success("Reporte generado por la API")
     info(f"Report ID: {context.report_id}")
     info(f"Longitud del Markdown: {len(markdown)} caracteres")
 
@@ -335,11 +337,14 @@ async def download_and_verify_pdf(
     if len(pdf_bytes) <= 0:
         raise PipelineError("El PDF exportado pesa 0 KB.")
 
+    OUTPUT_PDF_PATH.write_bytes(pdf_bytes)
+
     size_kb = len(pdf_bytes) / 1024
     disposition = response.headers.get("content-disposition", "sin encabezado")
-    success("PDF descargado y validado")
+    success("PDF descargado, guardado y validado")
     info(f"Tamaño del PDF: {size_kb:.2f} KB")
     info(f"Content-Disposition: {disposition}")
+    info(f"Archivo generado: {OUTPUT_PDF_PATH}")
 
 
 async def run_pipeline() -> int:

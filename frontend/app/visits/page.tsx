@@ -85,12 +85,20 @@ export default function VisitsPage() {
             Revisa rápidamente qué visitas ya tienen fotos, PDFs o audios antes de lanzar una nueva generación con Gemini.
           </p>
         </div>
-        <Link
-          href="/reports/new"
-          className="rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-        >
-          Generar desde visitas
-        </Link>
+        <div className="flex flex-wrap gap-3">
+          <Link
+            href="/visits/new"
+            className="rounded-xl bg-cyan-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-cyan-500"
+          >
+            Nueva visita
+          </Link>
+          <Link
+            href="/reports/new"
+            className="rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+          >
+            Generar desde visitas
+          </Link>
+        </div>
       </header>
 
       {status === "error" ? (

@@ -14,12 +14,12 @@ const workflowSteps = [
 
 export default function HomePage() {
   return (
-    <div className="space-y-8">
-      <section className="rounded-3xl bg-slate-950 px-8 py-10 text-white shadow-sm">
+    <div className="space-y-6 md:space-y-8">
+      <section className="rounded-3xl bg-slate-950 px-6 py-8 text-white shadow-sm md:px-8 md:py-10">
         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-300">
           Dashboard
         </p>
-        <h2 className="mt-3 max-w-3xl text-3xl font-semibold tracking-tight">
+        <h2 className="mt-3 max-w-3xl text-2xl font-semibold tracking-tight md:text-3xl">
           Centraliza visitas técnicas y transforma evidencia de campo en informes
           estructurados con IA multimodal.
         </h2>
@@ -29,11 +29,11 @@ export default function HomePage() {
         </p>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {metrics.map((metric) => (
           <article
             key={metric.label}
-            className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+            className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6"
           >
             <p className="text-sm font-medium text-slate-500">{metric.label}</p>
             <p className="mt-3 text-3xl font-semibold text-slate-950">
@@ -44,8 +44,8 @@ export default function HomePage() {
         ))}
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-[1.35fr_1fr]">
-        <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-[1.35fr_1fr]">
+        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
           <h3 className="text-xl font-semibold text-slate-950">
             Flujo base de la plataforma
           </h3>
@@ -61,7 +61,7 @@ export default function HomePage() {
           </ol>
         </article>
 
-        <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
           <h3 className="text-xl font-semibold text-slate-950">
             Estado del alcance inicial
           </h3>

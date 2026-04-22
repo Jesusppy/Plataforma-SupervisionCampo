@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+import base64
+import ipaddress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import HTTPException, status
@@ -36,6 +40,140 @@ class GeminiService:
             )
         return self.settings.gemini_api_key
 
+    def _section_title(self, index: int, section: Any) -> str:
+        if isinstance(section, dict):
+            return str(section.get("title") or section.get("name") or f"Sección {index + 1}")
+        return str(section)
+
+    def _section_requests_photos(self, section: Any) -> bool:
+        if not isinstance(section, dict):
+            return False
+        return bool(
+            section.get("includes_photo")
+            or section.get("include_photo")
+            or section.get("has_photo")
+        )
+
+    def _mock_section_content(
+        self,
+        *,
+        title: str,
+        section: Any,
+        visit_notes: list[str],
+        pdfs: list[GenerationAsset],
+        audios: list[GenerationAsset],
+        images: list[GenerationAsset],
+    ) -> str:
+        normalized_title = title.lower()
+        notes_excerpt = visit_notes[0] if visit_notes else "Sin notas registradas en la visita."
+        image_lines = [
+            f"- Evidencia MinIO: {asset.file_name or 'sin-nombre'} ({asset.uri})"
+            for asset in images
+        ]
+        pdf_lines = [
+            f"- Documento técnico asociado: {asset.file_name or asset.uri}"
+            for asset in pdfs
+        ]
+        audio_lines = [
+            f"- Fuente de audio considerada: {asset.file_name or asset.uri}"
+            for asset in audios
+        ]
+
+        if "resumen" in normalized_title:
+            return "\n".join(
+                [
+                    "Se ejecutó una inspección forestal preventiva sobre un lote con cobertura mixta de pino y regeneración nativa, orientada a verificar estado del sotobosque, continuidad de cortafuegos y condiciones de acceso para cuadrillas.",
+                    "",
+                    "Los hallazgos preliminares muestran un nivel de riesgo operativo medio: se observan acumulaciones localizadas de material seco, huellas de escorrentía en un talud secundario y necesidad de reforzar el señalamiento del perímetro de intervención.",
+                    "",
+                    f"Referencia de campo principal: {notes_excerpt}",
+                ]
+            )
+
+        if self._section_requests_photos(section) or "foto" in normalized_title or "evidencia" in normalized_title:
+            photo_block = image_lines or ["- No se recibió evidencia fotográfica en esta ejecución."]
+            return "\n".join(
+                [
+                    "La sección requiere evidencia visual y, por ello, debe leerse junto con la galería incrustada por el exportador PDF.",
+                    "",
+                    "Observaciones visuales simuladas para validación local:",
+                    "- La evidencia fotográfica muestra una zona de ensayo con marcador rojo usado para verificar el pipeline de captura, almacenamiento y exportación.",
+                    "- La referencia visual confirma que el motor de exportación puede ubicar e incrustar fotografías provenientes de MinIO en esta sección.",
+                    "- Ver evidencia fotográfica adjunta en la exportación final.",
+                    "",
+                    *photo_block,
+                ]
+            )
+
+        if "conclusion" in normalized_title or "accion" in normalized_title:
+            lines = [
+                "1. Reperfilar y limpiar los puntos de acumulación de material vegetal fino detectados en bordes de sendero.",
+                "2. Reforzar el mantenimiento del cortafuego secundario antes del siguiente ciclo de calor extremo.",
+                "3. Mantener un registro fotográfico periódico en MinIO para comparar evolución de cobertura y erosión.",
+            ]
+            if pdf_lines:
+                lines.extend(["", "Documentación de apoyo considerada:", *pdf_lines])
+            if audio_lines:
+                lines.extend(["", "Fuentes orales o de patrulla consideradas:", *audio_lines])
+            return "\n".join(lines)
+
+        return "\n".join(
+            [
+                f"Se desarrolla la sección '{title}' con un enfoque de inspección forestal preventiva y trazabilidad de evidencias.",
+                "",
+                "Se consideran variables de cobertura vegetal, estabilidad superficial del terreno, acceso operativo y coherencia entre lo observado en campo y la evidencia almacenada.",
+                "",
+                f"Síntesis de visita: {notes_excerpt}",
+            ]
+        )
+
+    def _build_mock_report_draft(
+        self,
+        *,
+        template_name: str,
+        template_structure: list[dict[str, object]],
+        tone: str,
+        instructions: str | None,
+        visit_notes: list[str],
+        assets: list[GenerationAsset],
+    ) -> str:
+        pdfs, audios, images, _others = self._classify_assets(assets)
+        sections = template_structure or [
+            {"title": "Resumen ejecutivo"},
+            {"title": "Evidencia fotográfica", "includes_photo": True},
+            {"title": "Conclusiones y acciones"},
+        ]
+
+        blocks: list[str] = [
+            "<!-- MOCK_LLM: reporte forestal estático para validación local -->",
+            f"> Plantilla simulada: {template_name}",
+            f"> Tono solicitado: {tone}",
+        ]
+        if instructions:
+            blocks.append(f"> Instrucciones base: {instructions}")
+
+        for index, section in enumerate(sections):
+            title = self._section_title(index, section)
+            body = self._mock_section_content(
+                title=title,
+                section=section,
+                visit_notes=visit_notes,
+                pdfs=pdfs,
+                audios=audios,
+                images=images,
+            )
+            blocks.append(f"## {title}\n\n{body}")
+
+        if not any("observaciones del asistente" in self._section_title(index, section).lower() for index, section in enumerate(sections)):
+            blocks.append(
+                "## Observaciones del asistente\n\n"
+                "- El modo `USE_MOCK_LLM` está activo, por lo que este contenido no proviene de Gemini y sirve únicamente para validar el pipeline local.\n"
+                "- La sección de evidencia fotográfica contiene referencias explícitas a activos almacenados en MinIO para que la exportación PDF pueda incrustar imágenes reales.\n"
+                "- La estructura del documento permanece alineada con la plantilla entregada por la API."
+            )
+
+        return "\n\n".join(blocks).strip()
+
     async def _generate_content(
         self,
         *,
@@ -48,13 +186,25 @@ class GeminiService:
             f"{model}:generateContent?key={api_key}"
         )
 
+        response: httpx.Response | None = None
         async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.post(
-                url,
-                headers=self._get_headers(),
-                json={"contents": contents},
-            )
+            for attempt in range(3):
+                response = await client.post(
+                    url,
+                    headers=self._get_headers(),
+                    json={"contents": contents},
+                )
+                if response.status_code < 400:
+                    break
+                if response.status_code not in {429, 503} or attempt == 2:
+                    break
+                await asyncio.sleep(2**attempt)
 
+        if response is None:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="No fue posible obtener respuesta desde Gemini.",
+            )
         if response.status_code >= 400:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
@@ -82,6 +232,12 @@ class GeminiService:
         return "\n".join(text_parts).strip()
 
     async def transcribe_audio(self, *, audio_uri: str, mime_type: str) -> str:
+        if self.settings.use_mock_llm:
+            return (
+                "[MOCK_LLM] Transcripción simulada de inspección forestal: "
+                "se reporta revisión de cortafuegos, presencia de material seco y acceso transitable para cuadrillas."
+            )
+
         contents = [
             {
                 "role": "user",
@@ -155,6 +311,43 @@ class GeminiService:
             )
         return "\n".join(lines)
 
+    def _requires_inline_upload(self, uri: str) -> bool:
+        parsed = urlparse(uri)
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        if hostname in {"localhost", "127.0.0.1", "::1"}:
+            return True
+        try:
+            return ipaddress.ip_address(hostname).is_private
+        except ValueError:
+            return False
+
+    async def _build_asset_part(self, asset: GenerationAsset) -> dict[str, Any]:
+        if not self._requires_inline_upload(asset.uri):
+            return {
+                "file_data": {
+                    "mime_type": asset.mime_type,
+                    "file_uri": asset.uri,
+                }
+            }
+
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            response = await client.get(asset.uri)
+
+        if response.status_code >= 400:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"No fue posible descargar el activo local para Gemini: {response.text}",
+            )
+
+        return {
+            "inline_data": {
+                "mime_type": asset.mime_type,
+                "data": base64.b64encode(response.content).decode("ascii"),
+            }
+        }
+
     async def generate_report_draft(
         self,
         *,
@@ -165,18 +358,21 @@ class GeminiService:
         visit_notes: list[str],
         assets: list[GenerationAsset],
     ) -> str:
+        if self.settings.use_mock_llm:
+            return self._build_mock_report_draft(
+                template_name=template_name,
+                template_structure=template_structure,
+                tone=tone,
+                instructions=instructions,
+                visit_notes=visit_notes,
+                assets=assets,
+            )
+
         pdfs, audios, images, others = self._classify_assets(assets)
 
         multimodal_parts: list[dict[str, Any]] = []
         for asset in assets:
-            multimodal_parts.append(
-                {
-                    "file_data": {
-                        "mime_type": asset.mime_type,
-                        "file_uri": asset.uri,
-                    }
-                }
-            )
+            multimodal_parts.append(await self._build_asset_part(asset))
 
         sections_text = "\n".join(
             self._format_section(index, section)
