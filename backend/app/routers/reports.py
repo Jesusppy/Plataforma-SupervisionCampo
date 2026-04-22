@@ -31,8 +31,24 @@ from app.services.storage_service import StorageService, get_storage_service
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
-async def _get_report_or_404(session: AsyncSession, report_id: UUID) -> Report:
-    result = await session.execute(select(Report).where(Report.id == report_id))
+async def _get_report_or_404(
+    session: AsyncSession,
+    report_id: UUID,
+    current_user: User,
+    *,
+    include_relations: bool = False,
+) -> Report:
+    statement = select(Report).join(Project).where(
+        Report.id == report_id,
+        Project.user_id == current_user.id,
+    )
+    if include_relations:
+        statement = statement.options(
+            selectinload(Report.template),
+            selectinload(Report.project),
+        )
+
+    result = await session.execute(statement)
     report = result.scalar_one_or_none()
     if report is None:
         raise HTTPException(
@@ -42,8 +58,17 @@ async def _get_report_or_404(session: AsyncSession, report_id: UUID) -> Report:
     return report
 
 
-async def _ensure_project_exists(session: AsyncSession, project_id: UUID) -> None:
-    result = await session.execute(select(Project.id).where(Project.id == project_id))
+async def _ensure_project_exists(
+    session: AsyncSession,
+    project_id: UUID,
+    current_user: User,
+) -> None:
+    result = await session.execute(
+        select(Project.id).where(
+            Project.id == project_id,
+            Project.user_id == current_user.id,
+        )
+    )
     if result.scalar_one_or_none() is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -54,11 +79,17 @@ async def _ensure_project_exists(session: AsyncSession, project_id: UUID) -> Non
 async def _ensure_template_exists(
     session: AsyncSession,
     template_id: UUID | None,
+    current_user: User,
 ) -> Template | None:
     if template_id is None:
         return None
 
-    result = await session.execute(select(Template).where(Template.id == template_id))
+    result = await session.execute(
+        select(Template).where(
+            Template.id == template_id,
+            Template.user_id == current_user.id,
+        )
+    )
     template = result.scalar_one_or_none()
     if template is None:
         raise HTTPException(
@@ -72,8 +103,14 @@ async def _ensure_template_exists(
 async def list_reports(
     project_id: UUID | None = None,
     session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> list[Report]:
-    statement = select(Report).order_by(Report.created_at.desc())
+    statement = (
+        select(Report)
+        .join(Project)
+        .where(Project.user_id == current_user.id)
+        .order_by(Report.created_at.desc())
+    )
     if project_id is not None:
         statement = statement.where(Report.project_id == project_id)
 
@@ -90,10 +127,10 @@ async def list_reports(
 async def create_report(
     payload: ReportCreate,
     session: AsyncSession = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Report:
-    await _ensure_project_exists(session, payload.project_id)
-    await _ensure_template_exists(session, payload.template_id)
+    await _ensure_project_exists(session, payload.project_id, current_user)
+    await _ensure_template_exists(session, payload.template_id, current_user)
 
     report = Report(**payload.model_dump())
     session.add(report)
@@ -110,8 +147,9 @@ async def create_report(
 async def get_report(
     report_id: UUID,
     session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Report:
-    return await _get_report_or_404(session, report_id)
+    return await _get_report_or_404(session, report_id, current_user)
 
 
 @router.put(
@@ -123,10 +161,11 @@ async def update_report(
     report_id: UUID,
     payload: ReportUpdate,
     session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Report:
-    report = await _get_report_or_404(session, report_id)
+    report = await _get_report_or_404(session, report_id, current_user)
     if payload.template_id is not None:
-        await _ensure_template_exists(session, payload.template_id)
+        await _ensure_template_exists(session, payload.template_id, current_user)
 
     update_data = payload.model_dump(exclude_unset=True)
     for field_name, value in update_data.items():
@@ -145,8 +184,9 @@ async def update_report(
 async def delete_report(
     report_id: UUID,
     session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Response:
-    report = await _get_report_or_404(session, report_id)
+    report = await _get_report_or_404(session, report_id, current_user)
     await session.delete(report)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -163,10 +203,10 @@ async def generate_report_draft(
     session: AsyncSession = Depends(get_db),
     gemini_service: GeminiService = Depends(get_gemini_service),
     storage_service: StorageService = Depends(get_storage_service),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Report:
-    await _ensure_project_exists(session, payload.project_id)
-    template = await _ensure_template_exists(session, payload.template_id)
+    await _ensure_project_exists(session, payload.project_id, current_user)
+    template = await _ensure_template_exists(session, payload.template_id, current_user)
     if template is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -265,7 +305,10 @@ async def _collect_photos_for_report(
         statement = (
             select(Visit)
             .options(selectinload(Visit.attachments))
-            .where(Visit.id.in_(visit_ids))
+            .where(
+                Visit.project_id == report.project_id,
+                Visit.id.in_(visit_ids),
+            )
         )
 
     result = await session.execute(statement)
@@ -302,19 +345,14 @@ async def export_report(
     session: AsyncSession = Depends(get_db),
     export_service: ExportService = Depends(get_export_service),
     storage_service: StorageService = Depends(get_storage_service),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Response:
-    result = await session.execute(
-        select(Report)
-        .options(selectinload(Report.template), selectinload(Report.project))
-        .where(Report.id == report_id)
+    report = await _get_report_or_404(
+        session,
+        report_id,
+        current_user,
+        include_relations=True,
     )
-    report = result.scalar_one_or_none()
-    if report is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Reporte no encontrado.",
-        )
 
     if not report.content_markdown:
         raise HTTPException(

@@ -25,11 +25,61 @@ settings = get_settings()
 router = APIRouter(prefix="/visits", tags=["visits"])
 
 
-async def _get_visit_or_404(session: AsyncSession, visit_id: UUID) -> Visit:
+async def _serialize_attachment(
+    attachment: Attachment,
+    storage_service: StorageService,
+) -> AttachmentRead:
+    signed_url = await storage_service.generate_presigned_url(
+        bucket_name=attachment.bucket_name,
+        object_key=attachment.object_key,
+    )
+    return AttachmentRead(
+        id=attachment.id,
+        visit_id=attachment.visit_id,
+        attachment_type=attachment.attachment_type,
+        file_name=attachment.file_name,
+        object_key=attachment.object_key,
+        bucket_name=attachment.bucket_name,
+        file_url=signed_url,
+        content_type=attachment.content_type,
+        extracted_text=attachment.extracted_text,
+        uploaded_at=attachment.uploaded_at,
+    )
+
+
+async def _serialize_visit(
+    visit: Visit,
+    storage_service: StorageService,
+) -> VisitRead:
+    attachments = [
+        await _serialize_attachment(attachment, storage_service)
+        for attachment in visit.attachments
+    ]
+    return VisitRead(
+        id=visit.id,
+        created_at=visit.created_at,
+        updated_at=visit.updated_at,
+        project_id=visit.project_id,
+        visited_at=visit.visited_at,
+        notes=visit.notes,
+        ai_context=visit.ai_context,
+        attachments=attachments,
+    )
+
+
+async def _get_visit_or_404(
+    session: AsyncSession,
+    visit_id: UUID,
+    current_user: User,
+) -> Visit:
     result = await session.execute(
         select(Visit)
+        .join(Project)
         .options(selectinload(Visit.attachments))
-        .where(Visit.id == visit_id)
+        .where(
+            Visit.id == visit_id,
+            Project.user_id == current_user.id,
+        )
     )
     visit = result.scalar_one_or_none()
     if visit is None:
@@ -40,8 +90,17 @@ async def _get_visit_or_404(session: AsyncSession, visit_id: UUID) -> Visit:
     return visit
 
 
-async def _ensure_project_exists(session: AsyncSession, project_id: UUID) -> None:
-    result = await session.execute(select(Project.id).where(Project.id == project_id))
+async def _ensure_project_exists(
+    session: AsyncSession,
+    project_id: UUID,
+    current_user: User,
+) -> None:
+    result = await session.execute(
+        select(Project.id).where(
+            Project.id == project_id,
+            Project.user_id == current_user.id,
+        )
+    )
     if result.scalar_one_or_none() is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -53,13 +112,21 @@ async def _ensure_project_exists(session: AsyncSession, project_id: UUID) -> Non
 async def list_visits(
     project_id: UUID | None = None,
     session: AsyncSession = Depends(get_db),
-) -> list[Visit]:
-    statement = select(Visit).options(selectinload(Visit.attachments))
+    storage_service: StorageService = Depends(get_storage_service),
+    current_user: User = Depends(get_current_user),
+) -> list[VisitRead]:
+    statement = (
+        select(Visit)
+        .join(Project)
+        .options(selectinload(Visit.attachments))
+        .where(Project.user_id == current_user.id)
+    )
     if project_id is not None:
         statement = statement.where(Visit.project_id == project_id)
 
     result = await session.execute(statement.order_by(Visit.visited_at.desc()))
-    return list(result.scalars().all())
+    visits = list(result.scalars().all())
+    return [await _serialize_visit(visit, storage_service) for visit in visits]
 
 
 @router.post(
@@ -71,9 +138,10 @@ async def list_visits(
 async def create_visit(
     payload: VisitCreate,
     session: AsyncSession = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
-) -> Visit:
-    await _ensure_project_exists(session, payload.project_id)
+    storage_service: StorageService = Depends(get_storage_service),
+    current_user: User = Depends(get_current_user),
+) -> VisitRead:
+    await _ensure_project_exists(session, payload.project_id, current_user)
 
     visit = Visit(
         project_id=payload.project_id,
@@ -84,7 +152,8 @@ async def create_visit(
     session.add(visit)
     await session.commit()
     await session.refresh(visit)
-    return await _get_visit_or_404(session, visit.id)
+    refreshed_visit = await _get_visit_or_404(session, visit.id, current_user)
+    return await _serialize_visit(refreshed_visit, storage_service)
 
 
 @router.get(
@@ -95,8 +164,11 @@ async def create_visit(
 async def get_visit(
     visit_id: UUID,
     session: AsyncSession = Depends(get_db),
-) -> Visit:
-    return await _get_visit_or_404(session, visit_id)
+    storage_service: StorageService = Depends(get_storage_service),
+    current_user: User = Depends(get_current_user),
+) -> VisitRead:
+    visit = await _get_visit_or_404(session, visit_id, current_user)
+    return await _serialize_visit(visit, storage_service)
 
 
 @router.put(
@@ -108,15 +180,18 @@ async def update_visit(
     visit_id: UUID,
     payload: VisitUpdate,
     session: AsyncSession = Depends(get_db),
-) -> Visit:
-    visit = await _get_visit_or_404(session, visit_id)
+    storage_service: StorageService = Depends(get_storage_service),
+    current_user: User = Depends(get_current_user),
+) -> VisitRead:
+    visit = await _get_visit_or_404(session, visit_id, current_user)
     update_data = payload.model_dump(exclude_unset=True)
 
     for field_name, value in update_data.items():
         setattr(visit, field_name, value)
 
     await session.commit()
-    return await _get_visit_or_404(session, visit_id)
+    refreshed_visit = await _get_visit_or_404(session, visit_id, current_user)
+    return await _serialize_visit(refreshed_visit, storage_service)
 
 
 @router.delete(
@@ -127,8 +202,9 @@ async def update_visit(
 async def delete_visit(
     visit_id: UUID,
     session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Response:
-    visit = await _get_visit_or_404(session, visit_id)
+    visit = await _get_visit_or_404(session, visit_id, current_user)
     await session.delete(visit)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -144,9 +220,10 @@ async def create_attachment(
     visit_id: UUID,
     payload: AttachmentCreate,
     session: AsyncSession = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
-) -> Attachment:
-    await _get_visit_or_404(session, visit_id)
+    storage_service: StorageService = Depends(get_storage_service),
+    current_user: User = Depends(get_current_user),
+) -> AttachmentRead:
+    await _get_visit_or_404(session, visit_id, current_user)
     if payload.visit_id != visit_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -157,7 +234,7 @@ async def create_attachment(
     session.add(attachment)
     await session.commit()
     await session.refresh(attachment)
-    return attachment
+    return await _serialize_attachment(attachment, storage_service)
 
 
 @router.delete(
@@ -169,8 +246,9 @@ async def delete_attachment(
     visit_id: UUID,
     attachment_id: UUID,
     session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Response:
-    await _get_visit_or_404(session, visit_id)
+    await _get_visit_or_404(session, visit_id, current_user)
     result = await session.execute(
         select(Attachment).where(
             Attachment.id == attachment_id,
@@ -202,9 +280,9 @@ async def upload_attachment(
     extracted_text: str | None = Form(default=None),
     session: AsyncSession = Depends(get_db),
     storage_service: StorageService = Depends(get_storage_service),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Attachment:
-    await _get_visit_or_404(session, visit_id)
+    await _get_visit_or_404(session, visit_id, current_user)
 
     if not file.filename:
         raise HTTPException(
@@ -235,4 +313,4 @@ async def upload_attachment(
     await session.commit()
     await session.refresh(attachment)
     await file.close()
-    return attachment
+    return await _serialize_attachment(attachment, storage_service)

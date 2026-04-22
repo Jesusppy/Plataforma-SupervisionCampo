@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     postgres_db: str = "supervision_campo"
 
     minio_endpoint: str = "localhost:9000"
+    minio_public_endpoint: str | None = None
     minio_access_key: str = "minioadmin"
     minio_secret_key: str = "minioadmin123"
     minio_secure: bool = False
@@ -63,6 +64,12 @@ class Settings(BaseSettings):
     def s3_endpoint_url(self) -> str:
         protocol = "https" if self.minio_secure else "http"
         return f"{protocol}://{self.minio_endpoint}"
+
+    @property
+    def s3_public_endpoint_url(self) -> str:
+        protocol = "https" if self.minio_secure else "http"
+        endpoint = self.minio_public_endpoint or self.minio_endpoint
+        return f"{protocol}://{endpoint}"
 
     @property
     def allowed_cors_origins(self) -> list[str]:

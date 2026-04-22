@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { Suspense, startTransition, useEffect, useState, type FormEvent } from "react";
 
 import {
   hasActiveSession,
@@ -37,7 +37,7 @@ async function readErrorMessage(response: Response): Promise<string> {
   return (await response.text().catch(() => "")) || `HTTP ${response.status}`;
 }
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -50,12 +50,23 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState>({ kind: "idle" });
+  const [redirectTarget, setRedirectTarget] = useState<string | null>(null);
 
   useEffect(() => {
-    if (hasActiveSession()) {
-      router.replace(nextPath);
+    if (redirectTarget) {
+      startTransition(() => {
+        router.replace(redirectTarget);
+        router.refresh();
+      });
+      return;
     }
-  }, [nextPath, router]);
+
+    if (hasActiveSession()) {
+      startTransition(() => {
+        router.replace(nextPath);
+      });
+    }
+  }, [nextPath, redirectTarget, router]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -89,8 +100,7 @@ export default function LoginPage() {
             ? "Sesión iniciada correctamente. Redirigiendo..."
             : "Usuario creado y sesión iniciada. Redirigiendo...",
       });
-      router.replace(nextPath);
-      router.refresh();
+      setRedirectTarget(nextPath);
     } catch (error) {
       setFeedback({
         kind: "error",
@@ -153,9 +163,9 @@ export default function LoginPage() {
         </section>
 
         <section className="flex items-center">
-          <div className="w-full rounded-[2rem] border border-white/70 bg-white/90 p-8 shadow-xl shadow-slate-200/60 backdrop-blur">
-            <div className="flex items-center justify-between gap-3">
-              <div>
+          <div className="w-full min-h-[42rem] rounded-[2rem] border border-white/70 bg-white/90 p-8 shadow-xl shadow-slate-200/60 backdrop-blur">
+            <div className="flex min-h-[8.5rem] flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-h-[6.75rem] max-w-[16rem] sm:max-w-[17rem]">
                 <p className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-700">
                   Acceso
                 </p>
@@ -163,37 +173,50 @@ export default function LoginPage() {
                   {mode === "login" ? "Iniciar sesión" : "Crear usuario de acceso"}
                 </h2>
               </div>
-              <div className="rounded-full bg-slate-100 p-1 text-sm font-medium text-slate-700">
+              <div className="grid w-full max-w-xs grid-cols-2 rounded-2xl bg-slate-100 p-1 text-sm font-medium text-slate-700">
                 <button
                   type="button"
                   onClick={() => setMode("login")}
-                  className={`rounded-full px-4 py-2 transition ${
-                    mode === "login" ? "bg-slate-950 text-white" : "text-slate-600"
+                  className={`rounded-xl px-4 py-2.5 transition ${
+                    mode === "login"
+                      ? "bg-slate-950 text-white shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
                   }`}
+                  aria-pressed={mode === "login"}
                 >
                   Login
                 </button>
                 <button
                   type="button"
                   onClick={() => setMode("register")}
-                  className={`rounded-full px-4 py-2 transition ${
-                    mode === "register" ? "bg-slate-950 text-white" : "text-slate-600"
+                  className={`rounded-xl px-4 py-2.5 transition ${
+                    mode === "register"
+                      ? "bg-slate-950 text-white shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
                   }`}
+                  aria-pressed={mode === "register"}
                 >
                   Registro
                 </button>
               </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+            <form onSubmit={handleSubmit} className="mt-8 flex min-h-[28rem] flex-col">
               {sessionMessages[sessionReason] ? (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                   {sessionMessages[sessionReason]}
                 </div>
               ) : null}
 
-              {mode === "register" ? (
-                <div className="space-y-2">
+              <div className="flex flex-1 flex-col gap-5">
+                <div
+                  className={`min-h-[5.75rem] space-y-2 transition-all duration-200 ${
+                    mode === "register"
+                      ? "opacity-100"
+                      : "pointer-events-none opacity-0"
+                  }`}
+                  aria-hidden={mode !== "register"}
+                >
                   <label htmlFor="full-name" className="text-sm font-medium text-slate-800">
                     Nombre completo
                   </label>
@@ -203,45 +226,47 @@ export default function LoginPage() {
                     value={fullName}
                     onChange={(event) => setFullName(event.target.value)}
                     placeholder="Ej. Laura Pérez"
+                    disabled={mode !== "register"}
+                    autoComplete="name"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100 disabled:cursor-default disabled:opacity-60"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label htmlFor="email" className="text-sm font-medium text-slate-800">
+                    Correo
+                  </label>
+                  <input
+                    id="email"
+                    type="email"
+                    required
+                    autoComplete="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="tecnico@campo.com"
                     className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100"
                   />
                 </div>
-              ) : null}
 
-              <div className="space-y-2">
-                <label htmlFor="email" className="text-sm font-medium text-slate-800">
-                  Correo
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  required
-                  autoComplete="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="tecnico@campo.com"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100"
-                />
+                <div className="space-y-2">
+                  <label htmlFor="password" className="text-sm font-medium text-slate-800">
+                    Contraseña
+                  </label>
+                  <input
+                    id="password"
+                    type="password"
+                    required
+                    minLength={8}
+                    autoComplete={mode === "login" ? "current-password" : "new-password"}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="Mínimo 8 caracteres"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100"
+                  />
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <label htmlFor="password" className="text-sm font-medium text-slate-800">
-                  Contraseña
-                </label>
-                <input
-                  id="password"
-                  type="password"
-                  required
-                  minLength={8}
-                  autoComplete={mode === "login" ? "current-password" : "new-password"}
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="Mínimo 8 caracteres"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100"
-                />
-              </div>
-
-              <div className="flex items-center justify-between gap-4 text-sm text-slate-600">
+              <div className="mt-6 flex items-center justify-between gap-4 text-sm text-slate-600">
                 <p>
                   Tras autenticarte serás redirigido a <span className="font-semibold text-slate-900">{nextPath}</span>.
                 </p>
@@ -253,7 +278,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                className="mt-5 w-full rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSubmitting
                   ? "Procesando..."
@@ -263,12 +288,12 @@ export default function LoginPage() {
               </button>
 
               {feedback.kind === "success" ? (
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
                   {feedback.message}
                 </div>
               ) : null}
               {feedback.kind === "error" ? (
-                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
                   {feedback.message}
                 </div>
               ) : null}
@@ -277,5 +302,13 @@ export default function LoginPage() {
         </section>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+      <LoginPageContent />
+    </Suspense>
   );
 }

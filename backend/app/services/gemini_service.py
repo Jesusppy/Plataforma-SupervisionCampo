@@ -54,11 +54,20 @@ class GeminiService:
             or section.get("has_photo")
         )
 
+    def _is_plain_tone(self, tone: str) -> bool:
+        normalized = tone.lower()
+        return any(keyword in normalized for keyword in ("sencillo", "simple", "claro", "cliente a"))
+
+    def _is_formal_tone(self, tone: str) -> bool:
+        normalized = tone.lower()
+        return any(keyword in normalized for keyword in ("tecnico", "técnico", "formal", "cliente b", "institucional"))
+
     def _mock_section_content(
         self,
         *,
         title: str,
         section: Any,
+        tone: str,
         visit_notes: list[str],
         pdfs: list[GenerationAsset],
         audios: list[GenerationAsset],
@@ -66,6 +75,8 @@ class GeminiService:
     ) -> str:
         normalized_title = title.lower()
         notes_excerpt = visit_notes[0] if visit_notes else "Sin notas registradas en la visita."
+        plain_tone = self._is_plain_tone(tone)
+        formal_tone = self._is_formal_tone(tone)
         image_lines = [
             f"- Evidencia MinIO: {asset.file_name or 'sin-nombre'} ({asset.uri})"
             for asset in images
@@ -80,6 +91,17 @@ class GeminiService:
         ]
 
         if "resumen" in normalized_title:
+            if plain_tone:
+                return "\n".join(
+                    [
+                        "Se realizó una revisión preventiva del terreno para comprobar el estado general de la zona, los accesos y los puntos que podrían dar problemas en próximas semanas.",
+                        "",
+                        "En términos sencillos, el área puede seguir operando, pero conviene actuar pronto sobre restos vegetales secos, pequeñas marcas de erosión y la señalización del perímetro.",
+                        "",
+                        f"Referencia principal de campo: {notes_excerpt}",
+                    ]
+                )
+
             return "\n".join(
                 [
                     "Se ejecutó una inspección forestal preventiva sobre un lote con cobertura mixta de pino y regeneración nativa, orientada a verificar estado del sotobosque, continuidad de cortafuegos y condiciones de acceso para cuadrillas.",
@@ -92,6 +114,20 @@ class GeminiService:
 
         if self._section_requests_photos(section) or "foto" in normalized_title or "evidencia" in normalized_title:
             photo_block = image_lines or ["- No se recibió evidencia fotográfica en esta ejecución."]
+            if plain_tone:
+                return "\n".join(
+                    [
+                        "Esta parte del informe se apoya en las fotos de la visita para que el cliente pueda ver el estado real del punto revisado.",
+                        "",
+                        "Lectura visual en lenguaje claro:",
+                        "- La imagen confirma el punto inspeccionado y ayuda a entender el hallazgo sin necesidad de tecnicismos.",
+                        "- La exportación final inserta la foto directamente en esta sección para evitar buscarla aparte.",
+                        "- Ver evidencia fotográfica adjunta en el informe.",
+                        "",
+                        *photo_block,
+                    ]
+                )
+
             return "\n".join(
                 [
                     "La sección requiere evidencia visual y, por ello, debe leerse junto con la galería incrustada por el exportador PDF.",
@@ -106,16 +142,45 @@ class GeminiService:
             )
 
         if "conclusion" in normalized_title or "accion" in normalized_title:
-            lines = [
-                "1. Reperfilar y limpiar los puntos de acumulación de material vegetal fino detectados en bordes de sendero.",
-                "2. Reforzar el mantenimiento del cortafuego secundario antes del siguiente ciclo de calor extremo.",
-                "3. Mantener un registro fotográfico periódico en MinIO para comparar evolución de cobertura y erosión.",
-            ]
+            if plain_tone:
+                lines = [
+                    "1. Retirar cuanto antes los restos vegetales secos que se ven en los puntos más cargados.",
+                    "2. Revisar y mantener la franja de protección antes del próximo periodo de calor intenso.",
+                    "3. Seguir haciendo fotos periódicas para comparar si la zona mejora o empeora.",
+                ]
+            else:
+                lines = [
+                    "1. Reperfilar y limpiar los puntos de acumulación de material vegetal fino detectados en bordes de sendero.",
+                    "2. Reforzar el mantenimiento del cortafuego secundario antes del siguiente ciclo de calor extremo.",
+                    "3. Mantener un registro fotográfico periódico en MinIO para comparar evolución de cobertura y erosión.",
+                ]
             if pdf_lines:
                 lines.extend(["", "Documentación de apoyo considerada:", *pdf_lines])
             if audio_lines:
                 lines.extend(["", "Fuentes orales o de patrulla consideradas:", *audio_lines])
             return "\n".join(lines)
+
+        if formal_tone:
+            return "\n".join(
+                [
+                    f"Se desarrolla la sección '{title}' con enfoque técnico-formal, priorizando trazabilidad, terminología sectorial y correspondencia entre evidencia visual y hallazgos operativos.",
+                    "",
+                    "Se consideran variables de cobertura vegetal, estabilidad superficial del terreno, accesibilidad operativa y consistencia documental para sostener una lectura apta para cliente institucional.",
+                    "",
+                    f"Síntesis de visita: {notes_excerpt}",
+                ]
+            )
+
+        if plain_tone:
+            return "\n".join(
+                [
+                    f"La sección '{title}' se redacta con lenguaje claro para que cualquier cliente entienda qué se vio y por qué importa.",
+                    "",
+                    "Se resume el estado del terreno, los accesos y la evidencia disponible sin cargar el texto con terminología especializada innecesaria.",
+                    "",
+                    f"Síntesis de visita: {notes_excerpt}",
+                ]
+            )
 
         return "\n".join(
             [
@@ -149,6 +214,10 @@ class GeminiService:
             f"> Plantilla simulada: {template_name}",
             f"> Tono solicitado: {tone}",
         ]
+        if self._is_plain_tone(tone):
+            blocks.append("> Perfil de salida: lenguaje claro para cliente no técnico.")
+        elif self._is_formal_tone(tone):
+            blocks.append("> Perfil de salida: redacción técnico-formal para cliente institucional.")
         if instructions:
             blocks.append(f"> Instrucciones base: {instructions}")
 
@@ -157,6 +226,7 @@ class GeminiService:
             body = self._mock_section_content(
                 title=title,
                 section=section,
+                tone=tone,
                 visit_notes=visit_notes,
                 pdfs=pdfs,
                 audios=audios,

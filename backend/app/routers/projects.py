@@ -20,10 +20,14 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 async def _get_project_or_404(
     session: AsyncSession,
     project_id: UUID,
+    current_user: User,
     *,
     include_relations: bool = False,
 ) -> Project:
-    statement = select(Project).where(Project.id == project_id)
+    statement = select(Project).where(
+        Project.id == project_id,
+        Project.user_id == current_user.id,
+    )
     if include_relations:
         statement = statement.options(
             selectinload(Project.visits).selectinload(Visit.attachments),
@@ -41,8 +45,15 @@ async def _get_project_or_404(
 
 
 @router.get("", response_model=list[ProjectRead], summary="Lista los proyectos")
-async def list_projects(session: AsyncSession = Depends(get_db)) -> list[Project]:
-    result = await session.execute(select(Project).order_by(Project.created_at.desc()))
+async def list_projects(
+    session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[Project]:
+    result = await session.execute(
+        select(Project)
+        .where(Project.user_id == current_user.id)
+        .order_by(Project.created_at.desc())
+    )
     return list(result.scalars().all())
 
 
@@ -55,9 +66,13 @@ async def list_projects(session: AsyncSession = Depends(get_db)) -> list[Project
 async def create_project(
     payload: ProjectCreate,
     session: AsyncSession = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Project:
-    project = Project(name=payload.name, description=payload.description)
+    project = Project(
+        user_id=current_user.id,
+        name=payload.name,
+        description=payload.description,
+    )
     session.add(project)
     await session.commit()
     await session.refresh(project)
@@ -72,8 +87,14 @@ async def create_project(
 async def get_project(
     project_id: UUID,
     session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Project:
-    return await _get_project_or_404(session, project_id, include_relations=True)
+    return await _get_project_or_404(
+        session,
+        project_id,
+        current_user,
+        include_relations=True,
+    )
 
 
 @router.put(
@@ -85,8 +106,9 @@ async def update_project(
     project_id: UUID,
     payload: ProjectUpdate,
     session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Project:
-    project = await _get_project_or_404(session, project_id)
+    project = await _get_project_or_404(session, project_id, current_user)
     update_data = payload.model_dump(exclude_unset=True)
 
     for field_name, value in update_data.items():
@@ -105,8 +127,9 @@ async def update_project(
 async def delete_project(
     project_id: UUID,
     session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Response:
-    project = await _get_project_or_404(session, project_id)
+    project = await _get_project_or_404(session, project_id, current_user)
     await session.delete(project)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -93,16 +93,19 @@ En otras palabras: la visita es estable; la entrega se adapta.
 
 ## Inicio rápido
 
-### 1. Levantar infraestructura
+### 1. Levantar la plataforma completa con Docker
 
 Desde la raíz del repositorio:
 
 ```bash
-docker compose up -d
+docker compose up --build
 ```
 
-Servicios esperados:
+Servicios expuestos:
 
+- Frontend en `http://localhost:3000`
+- Backend en `http://localhost:8000`
+- Swagger en `http://localhost:8000/docs`
 - PostgreSQL en `localhost:5432`
 - MinIO API en `http://localhost:9000`
 - Consola de MinIO en `http://localhost:9001`
@@ -112,7 +115,24 @@ Buckets inicializados automáticamente:
 - `field-attachments`
 - `report-exports`
 
-### 2. Configurar backend
+### 2. Sembrar usuario administrador y plantillas base
+
+En otra terminal:
+
+```bash
+docker compose exec backend python scripts/seed_data.py
+```
+
+El seed es idempotente y deja disponibles:
+
+- Usuario administrador: `admin@example.com`
+- Contraseña: `Admin123!`
+- Plantilla `Cliente A - Informe claro de supervisión`
+- Plantilla `Cliente B - Informe técnico de supervisión`
+
+La plantilla de Cliente A fuerza un tono sencillo y explicativo. La de Cliente B fuerza un tono técnico-formal con terminología más institucional. Esto aplica tanto al flujo real con Gemini como al fallback `USE_MOCK_LLM=true` para la demo local.
+
+### 3. Configurar backend para desarrollo local sin Docker
 
 Ejemplo en PowerShell:
 
@@ -157,14 +177,14 @@ JWT_ALGORITHM=HS256
 JWT_ACCESS_TOKEN_TTL_MINUTES=1440
 ```
 
-### 3. Aplicar migraciones
+### 4. Aplicar migraciones
 
 ```bash
 cd backend
 alembic upgrade head
 ```
 
-### 4. Levantar la API
+### 5. Levantar la API
 
 ```bash
 cd backend
@@ -173,7 +193,7 @@ uvicorn app.main:app --reload --port 8000
 
 Swagger quedará disponible en `http://localhost:8000/docs`.
 
-### 5. Ejecutar la verificación integral
+### 6. Ejecutar la verificación integral
 
 Con la API ya levantada y, si usarás Gemini real, con `GEMINI_API_KEY` configurada:
 
@@ -193,6 +213,21 @@ El script cubre:
 - descarga del PDF y validación de tamaño mayor que `0 KB`
 
 Para desarrollo local puedes activar `USE_MOCK_LLM=True` en `backend/.env`. En ese modo, el backend no consume cuota de Gemini y devuelve un reporte forestal simulado con referencias explícitas a la evidencia fotográfica almacenada en MinIO, lo que permite validar la exportación final a PDF sin depender del servicio externo.
+
+### 7. Validar el seed en desarrollo local
+
+Si estás ejecutando el backend fuera de Docker:
+
+```bash
+cd backend
+python scripts/seed_data.py
+```
+
+## Validaciones funcionales recientes
+
+- La ruta dinámica de detalle de visita `/visits/[id]` permite entrar desde el listado y revisar notas, contexto y adjuntos.
+- Las imágenes privadas almacenadas en MinIO se muestran en frontend mediante URLs firmadas generadas por el backend, evitando `403 AccessDenied` al abrir visitas o reportes.
+- El exportador PDF incrusta las fotos en la sección marcada por la plantilla cuando `includes_photo=true`, manteniendo proporciones y continuidad visual con el informe.
 
 ## Estructura del repositorio
 

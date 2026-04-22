@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
 import { apiGet } from "../../lib/api-client";
 
@@ -31,7 +32,9 @@ function summarize(text: string, length = 160): string {
   return text.length <= length ? text : `${text.slice(0, length).trim()}...`;
 }
 
-export default function VisitsPage() {
+function VisitsPageContent() {
+  const searchParams = useSearchParams();
+  const projectId = searchParams.get("projectId");
   const [visits, setVisits] = useState<VisitSummary[]>([]);
   const [status, setStatus] = useState<FetchState>("loading");
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +47,9 @@ export default function VisitsPage() {
       setError(null);
 
       try {
-        const response = await apiGet<VisitSummary[]>("/visits");
+        const response = await apiGet<VisitSummary[]>(
+          projectId ? `/visits?project_id=${projectId}` : "/visits",
+        );
         if (cancelled) {
           return;
         }
@@ -69,7 +74,7 @@ export default function VisitsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [projectId]);
 
   return (
     <div className="space-y-8">
@@ -82,7 +87,9 @@ export default function VisitsPage() {
             Cronología de campo y evidencia asociada
           </h1>
           <p className="max-w-2xl text-sm leading-6 text-slate-600">
-            Revisa rápidamente qué visitas ya tienen fotos, PDFs o audios antes de lanzar una nueva generación con Gemini.
+            {projectId
+              ? "Visitas filtradas para el proyecto seleccionado, listas para revisión de evidencia y navegación a detalle."
+              : "Revisa rápidamente qué visitas ya tienen fotos, PDFs o audios antes de lanzar una nueva generación con Gemini."}
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -173,10 +180,27 @@ export default function VisitsPage() {
                   </span>
                 ))}
               </div>
+
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Link
+                  href={`/visits/${visit.id}`}
+                  className="rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+                >
+                  Ver detalle
+                </Link>
+              </div>
             </article>
           ))}
         </section>
       ) : null}
     </div>
+  );
+}
+
+export default function VisitsPage() {
+  return (
+    <Suspense fallback={<div className="space-y-8" />}>
+      <VisitsPageContent />
+    </Suspense>
   );
 }

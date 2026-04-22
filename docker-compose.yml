@@ -1,9 +1,6 @@
-version: "3.9"
-
 services:
-  postgres:
+  db:
     image: postgres:16-alpine
-    container_name: supervision-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: supervision_user
@@ -18,10 +15,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - platform_net
 
-  minio:
+  storage:
     image: minio/minio:latest
-    container_name: supervision-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -37,23 +35,91 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - platform_net
 
-  minio-init:
+  storage-init:
     image: minio/mc:latest
     container_name: supervision-minio-init
     depends_on:
-      minio:
+      storage:
         condition: service_healthy
     restart: "no"
     entrypoint: >
       /bin/sh -c "
-      mc alias set local http://minio:9000 minioadmin minioadmin123 &&
+      mc alias set local http://storage:9000 minioadmin minioadmin123 &&
       mc mb --ignore-existing local/field-attachments &&
       mc mb --ignore-existing local/report-exports &&
       mc anonymous set private local/field-attachments &&
       mc anonymous set private local/report-exports
       "
+    networks:
+      - platform_net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
+    environment:
+      APP_NAME: Plataforma de Supervision de Campo API
+      ENVIRONMENT: development
+      DEBUG: "false"
+      API_V1_PREFIX: /api/v1
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: supervision_user
+      POSTGRES_PASSWORD: supervision_password
+      POSTGRES_DB: supervision_campo
+      MINIO_ENDPOINT: storage:9000
+      MINIO_PUBLIC_ENDPOINT: localhost:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin123
+      MINIO_SECURE: "false"
+      MINIO_REGION: us-east-1
+      MINIO_ATTACHMENTS_BUCKET: field-attachments
+      MINIO_REPORTS_BUCKET: report-exports
+      USE_MOCK_LLM: "true"
+      JWT_SECRET_KEY: 54e65a4f08d0b3aa0f1090aa7b96094554c174c70cf99521887cfbd9a4816f7954da7a316f0fd8b154b9f7cff51f35bc
+      JWT_ALGORITHM: HS256
+      JWT_ACCESS_TOKEN_TTL_MINUTES: 1440
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    networks:
+      - platform_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+    networks:
+      - platform_net
 
 volumes:
   postgres_data:
   minio_data:
+
+networks:
+  platform_net:
+    driver: bridge

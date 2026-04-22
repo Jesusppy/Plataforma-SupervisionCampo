@@ -15,8 +15,17 @@ from app.schemas.template import TemplateCreate, TemplateRead, TemplateUpdate
 router = APIRouter(prefix="/templates", tags=["templates"])
 
 
-async def _get_template_or_404(session: AsyncSession, template_id: UUID) -> Template:
-    result = await session.execute(select(Template).where(Template.id == template_id))
+async def _get_template_or_404(
+    session: AsyncSession,
+    template_id: UUID,
+    current_user: User,
+) -> Template:
+    result = await session.execute(
+        select(Template).where(
+            Template.id == template_id,
+            Template.user_id == current_user.id,
+        )
+    )
     template = result.scalar_one_or_none()
     if template is None:
         raise HTTPException(
@@ -30,8 +39,9 @@ async def _get_template_or_404(session: AsyncSession, template_id: UUID) -> Temp
 async def list_templates(
     only_active: bool = False,
     session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> list[Template]:
-    statement = select(Template)
+    statement = select(Template).where(Template.user_id == current_user.id)
     if only_active:
         statement = statement.where(Template.is_active.is_(True))
 
@@ -48,9 +58,9 @@ async def list_templates(
 async def create_template(
     payload: TemplateCreate,
     session: AsyncSession = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Template:
-    template = Template(**payload.model_dump())
+    template = Template(user_id=current_user.id, **payload.model_dump())
     session.add(template)
     await session.commit()
     await session.refresh(template)
@@ -65,8 +75,9 @@ async def create_template(
 async def get_template(
     template_id: UUID,
     session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Template:
-    return await _get_template_or_404(session, template_id)
+    return await _get_template_or_404(session, template_id, current_user)
 
 
 @router.put(
@@ -78,8 +89,9 @@ async def update_template(
     template_id: UUID,
     payload: TemplateUpdate,
     session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Template:
-    template = await _get_template_or_404(session, template_id)
+    template = await _get_template_or_404(session, template_id, current_user)
     update_data = payload.model_dump(exclude_unset=True)
 
     for field_name, value in update_data.items():
@@ -98,8 +110,9 @@ async def update_template(
 async def delete_template(
     template_id: UUID,
     session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Response:
-    template = await _get_template_or_404(session, template_id)
+    template = await _get_template_or_404(session, template_id, current_user)
     await session.delete(template)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

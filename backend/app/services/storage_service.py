@@ -35,9 +35,21 @@ class StorageService:
             "region_name": settings.minio_region,
             "config": Config(signature_version="s3v4"),
         }
+        self._presign_client_kwargs = {
+            "service_name": "s3",
+            "endpoint_url": settings.s3_public_endpoint_url,
+            "aws_access_key_id": settings.minio_access_key,
+            "aws_secret_access_key": settings.minio_secret_key,
+            "region_name": settings.minio_region,
+            "config": Config(signature_version="s3v4"),
+        }
 
     async def _get_client(self) -> AsyncIterator[BaseClient]:
         async with self._session.client(**self._client_kwargs) as client:
+            yield client
+
+    async def _get_presign_client(self) -> AsyncIterator[BaseClient]:
+        async with self._session.client(**self._presign_client_kwargs) as client:
             yield client
 
     async def ensure_bucket(self, bucket_name: str) -> None:
@@ -121,7 +133,7 @@ class StorageService:
         expires_in_seconds: int = 3600,
     ) -> str:
         try:
-            async for client in self._get_client():
+            async for client in self._get_presign_client():
                 return await client.generate_presigned_url(
                     "get_object",
                     Params={"Bucket": bucket_name, "Key": object_key},

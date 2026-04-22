@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
+  Suspense,
   useEffect,
   useMemo,
   useState,
@@ -89,7 +90,7 @@ function buildUploadItems(files: File[]): {
   return { accepted, rejectedCount };
 }
 
-export default function NewVisitPage() {
+function NewVisitPageContent() {
   const searchParams = useSearchParams();
   const initialProjectId = searchParams.get("projectId") ?? "";
 
@@ -548,5 +549,13 @@ export default function NewVisitPage() {
         ) : null}
       </form>
     </div>
+  );
+}
+
+export default function NewVisitPage() {
+  return (
+    <Suspense fallback={<div className="space-y-8" />}>
+      <NewVisitPageContent />
+    </Suspense>
   );
 }
