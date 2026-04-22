@@ -165,7 +165,7 @@ function LoginPageContent() {
         <section className="flex items-center">
           <div className="w-full min-h-[42rem] rounded-[2rem] border border-white/70 bg-white/90 p-8 shadow-xl shadow-slate-200/60 backdrop-blur">
             <div className="flex min-h-[8.5rem] flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-h-[6.75rem] max-w-[16rem] sm:max-w-[17rem]">
+              <div className="min-h-[7.75rem] max-w-[18rem] sm:max-w-[19rem]">
                 <p className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-700">
                   Acceso
                 </p>
@@ -202,11 +202,13 @@ function LoginPageContent() {
             </div>
 
             <form onSubmit={handleSubmit} className="mt-8 flex min-h-[28rem] flex-col">
-              {sessionMessages[sessionReason] ? (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                  {sessionMessages[sessionReason]}
-                </div>
-              ) : null}
+              <div className="min-h-[4.5rem]">
+                {sessionMessages[sessionReason] ? (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    {sessionMessages[sessionReason]}
+                  </div>
+                ) : null}
+              </div>
 
               <div className="flex flex-1 flex-col gap-5">
                 <div
@@ -287,16 +289,18 @@ function LoginPageContent() {
                     : "Crear usuario e ingresar"}
               </button>
 
-              {feedback.kind === "success" ? (
-                <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-                  {feedback.message}
-                </div>
-              ) : null}
-              {feedback.kind === "error" ? (
-                <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-                  {feedback.message}
-                </div>
-              ) : null}
+              <div className="mt-5 min-h-[4.5rem]">
+                {feedback.kind === "success" ? (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                    {feedback.message}
+                  </div>
+                ) : null}
+                {feedback.kind === "error" ? (
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                    {feedback.message}
+                  </div>
+                ) : null}
+              </div>
             </form>
           </div>
         </section>

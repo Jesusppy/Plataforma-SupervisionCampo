@@ -91,137 +91,128 @@ En otras palabras: la visita es estable; la entrega se adapta.
 6. Gemini devuelve un borrador en Markdown.
 7. El exportador genera HTML o PDF, incorporando la fotografía de la visita en la sección correcta cuando la plantilla lo exige.
 
-## Inicio rápido
+## Instalación
 
-### 1. Levantar la plataforma completa con Docker
+### Docker local paso a paso
 
-Desde la raíz del repositorio:
+1. Crea el archivo de entorno raíz a partir del ejemplo.
+
+```bash
+cp .env.example .env
+```
+
+En PowerShell también puedes usar:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+2. Revisa y cambia como mínimo estos valores antes de compartir el entorno:
+
+- `POSTGRES_PASSWORD`
+- `MINIO_ROOT_PASSWORD`
+- `MINIO_SECRET_KEY`
+- `JWT_SECRET_KEY`
+- `GEMINI_API_KEY` si vas a usar Gemini real
+
+3. Levanta toda la plataforma desde la raíz del repositorio.
 
 ```bash
 docker compose up --build
 ```
 
-Servicios expuestos:
+4. Ejecuta el seed idempotente cuando el backend esté sano.
 
-- Frontend en `http://localhost:3000`
-- Backend en `http://localhost:8000`
-- Swagger en `http://localhost:8000/docs`
-- PostgreSQL en `localhost:5432`
-- MinIO API en `http://localhost:9000`
-- Consola de MinIO en `http://localhost:9001`
+```bash
+docker compose exec backend python scripts/seed_data.py
+```
+
+5. Abre los servicios.
+
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:8000`
+- Swagger: `http://localhost:8000/docs`
+- PostgreSQL: `localhost:5432`
+- MinIO API: `http://localhost:9000`
+- MinIO Console: `http://localhost:9001`
 
 Buckets inicializados automáticamente:
 
 - `field-attachments`
 - `report-exports`
 
-### 2. Sembrar usuario administrador y plantillas base
+### Credenciales sembradas por defecto
 
-En otra terminal:
+El seed crea o actualiza estos usuarios, controlados por variables `SEED_*`:
 
-```bash
-docker compose exec backend python scripts/seed_data.py
-```
+- Admin: `admin@example.com` / `Admin123!`
+- Demo: `demo@example.com` / `Demo123!`
 
-El seed es idempotente y deja disponibles:
+También deja disponibles las plantillas:
 
-- Usuario administrador: `admin@example.com`
-- Contraseña: `Admin123!`
-- Plantilla `Cliente A - Informe claro de supervisión`
-- Plantilla `Cliente B - Informe técnico de supervisión`
+- `Cliente A - Informe claro de supervisión`
+- `Cliente B - Informe técnico de supervisión`
 
-La plantilla de Cliente A fuerza un tono sencillo y explicativo. La de Cliente B fuerza un tono técnico-formal con terminología más institucional. Esto aplica tanto al flujo real con Gemini como al fallback `USE_MOCK_LLM=true` para la demo local.
+### Desarrollo local sin Docker
 
-### 3. Configurar backend para desarrollo local sin Docker
-
-Ejemplo en PowerShell:
+1. Crea el archivo [backend/.env.example](backend/.env.example) como base para `backend/.env`.
+2. Prepara un entorno virtual e instala dependencias.
 
 ```powershell
 cd backend
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install fastapi uvicorn sqlalchemy asyncpg alembic pydantic pydantic-settings aioboto3 boto3 httpx markdown xhtml2pdf passlib[bcrypt] python-multipart python-dotenv email-validator
+pip install -r requirements.txt
 ```
 
-Crea `backend/.env` con una configuración similar a esta:
-
-```env
-APP_NAME=Plataforma de Supervision de Campo API
-ENVIRONMENT=local
-DEBUG=true
-API_V1_PREFIX=/api/v1
-CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_USER=supervision_user
-POSTGRES_PASSWORD=supervision_password
-POSTGRES_DB=supervision_campo
-
-MINIO_ENDPOINT=localhost:9000
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin123
-MINIO_SECURE=false
-MINIO_REGION=us-east-1
-MINIO_ATTACHMENTS_BUCKET=field-attachments
-MINIO_REPORTS_BUCKET=report-exports
-
-GEMINI_API_KEY=tu_api_key
-GEMINI_MODEL=gemini-2.5-pro
-GEMINI_TRANSCRIPTION_MODEL=gemini-2.5-flash
-GEMINI_API_BASE_URL=https://generativelanguage.googleapis.com
-USE_MOCK_LLM=False
-
-JWT_SECRET_KEY=change-me-in-production-please
-JWT_ALGORITHM=HS256
-JWT_ACCESS_TOKEN_TTL_MINUTES=1440
-```
-
-### 4. Aplicar migraciones
+3. Aplica migraciones.
 
 ```bash
 cd backend
 alembic upgrade head
 ```
 
-### 5. Levantar la API
+4. Levanta la API.
 
 ```bash
 cd backend
 uvicorn app.main:app --reload --port 8000
 ```
 
-Swagger quedará disponible en `http://localhost:8000/docs`.
+5. Si necesitas el seed fuera de Docker:
 
-### 6. Ejecutar la verificación integral
+```bash
+cd backend
+python scripts/seed_data.py
+```
 
-Con la API ya levantada y, si usarás Gemini real, con `GEMINI_API_KEY` configurada:
+### Verificación automatizada
+
+Regresión de seguridad y aislamiento:
+
+```bash
+cd backend
+pytest tests/test_security.py -q
+```
+
+Validación integral del pipeline:
 
 ```bash
 cd backend
 python scripts/verify_pipeline.py
 ```
 
-El script cubre:
+Con `USE_MOCK_LLM=true`, el backend no consume cuota de Gemini y sigue permitiendo validar generación y exportación.
 
-- `register -> login`
-- creación de proyecto
-- creación de visita
-- subida de una imagen PNG real de 100x100 generada en memoria
-- creación de plantilla
-- generación del borrador con Gemini o con el mock local
-- descarga del PDF y validación de tamaño mayor que `0 KB`
+## Production Checklist
 
-Para desarrollo local puedes activar `USE_MOCK_LLM=True` en `backend/.env`. En ese modo, el backend no consume cuota de Gemini y devuelve un reporte forestal simulado con referencias explícitas a la evidencia fotográfica almacenada en MinIO, lo que permite validar la exportación final a PDF sin depender del servicio externo.
-
-### 7. Validar el seed en desarrollo local
-
-Si estás ejecutando el backend fuera de Docker:
-
-```bash
-cd backend
-python scripts/seed_data.py
-```
+- Configurar SSL/TLS delante de Next.js y FastAPI con un reverse proxy real y certificados válidos.
+- Sustituir MinIO local por un bucket S3 real o equivalente compatible, con credenciales rotadas y políticas privadas.
+- Definir `GEMINI_API_KEY` de producción y separar proyecto/cuota respecto al entorno de desarrollo.
+- Rotar `JWT_SECRET_KEY`, `POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD` y `MINIO_SECRET_KEY` antes del despliegue.
+- Cambiar las credenciales seed por valores propios del cliente si el entorno no es de demo.
+- Ejecutar `pytest tests/test_security.py -q` y la pasada manual de exportación antes de cada release.
+- Monitorizar logs del backend, expiración de URLs firmadas y backups de PostgreSQL/S3.
 
 ## Validaciones funcionales recientes
 

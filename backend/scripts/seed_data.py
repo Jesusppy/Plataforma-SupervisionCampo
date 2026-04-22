@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -16,8 +17,13 @@ from app.models.template import Template
 from app.models.user import User
 
 
-ADMIN_EMAIL = "admin@example.com"
-ADMIN_PASSWORD = "Admin123!"
+ADMIN_EMAIL = os.environ.get("SEED_ADMIN_EMAIL", "admin@example.com")
+ADMIN_PASSWORD = os.environ.get("SEED_ADMIN_PASSWORD", "Admin123!")
+ADMIN_FULL_NAME = os.environ.get("SEED_ADMIN_FULL_NAME", "Administrador de Plataforma")
+
+DEMO_EMAIL = os.environ.get("SEED_DEMO_EMAIL", "demo@example.com")
+DEMO_PASSWORD = os.environ.get("SEED_DEMO_PASSWORD", "Demo123!")
+DEMO_FULL_NAME = os.environ.get("SEED_DEMO_FULL_NAME", "Usuario Demo")
 
 
 def _client_a_sections() -> list[dict[str, object]]:
@@ -64,31 +70,39 @@ def _client_b_sections() -> list[dict[str, object]]:
     ]
 
 
-async def _upsert_admin_user() -> None:
+async def _upsert_user(
+    *,
+    email: str,
+    password: str,
+    full_name: str,
+    is_superuser: bool,
+) -> User:
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(User).where(User.email == ADMIN_EMAIL))
+        result = await session.execute(select(User).where(User.email == email))
         user = result.scalar_one_or_none()
 
         if user is None:
             user = User(
-                email=ADMIN_EMAIL,
-                full_name="Administrador de Plataforma",
-                hashed_password=hash_password(ADMIN_PASSWORD),
+                email=email,
+                full_name=full_name,
+                hashed_password=hash_password(password),
                 is_active=True,
-                is_superuser=True,
+                is_superuser=is_superuser,
             )
             session.add(user)
             action = "creado"
         else:
-            user.full_name = "Administrador de Plataforma"
-            user.hashed_password = hash_password(ADMIN_PASSWORD)
+            user.full_name = full_name
+            user.hashed_password = hash_password(password)
             user.is_active = True
-            user.is_superuser = True
+            user.is_superuser = is_superuser
             action = "actualizado"
 
         await session.commit()
-    await session.refresh(user)
-    print(f"Usuario administrador {action}: {ADMIN_EMAIL}")
+        await session.refresh(user)
+
+    role = "administrador" if is_superuser else "demo"
+    print(f"Usuario {role} {action}: {email}")
     return user
 
 
@@ -135,7 +149,18 @@ async def _upsert_template(
 
 
 async def main() -> None:
-    admin_user = await _upsert_admin_user()
+    admin_user = await _upsert_user(
+        email=ADMIN_EMAIL,
+        password=ADMIN_PASSWORD,
+        full_name=ADMIN_FULL_NAME,
+        is_superuser=True,
+    )
+    await _upsert_user(
+        email=DEMO_EMAIL,
+        password=DEMO_PASSWORD,
+        full_name=DEMO_FULL_NAME,
+        is_superuser=False,
+    )
     await _upsert_template(
         user_id=admin_user.id,
         name="Cliente A - Informe claro de supervisión",

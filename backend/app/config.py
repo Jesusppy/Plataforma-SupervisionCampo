@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from secrets import token_urlsafe
 from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -45,12 +47,22 @@ class Settings(BaseSettings):
     gemini_api_base_url: str = "https://generativelanguage.googleapis.com"
     use_mock_llm: bool = False
 
-    jwt_secret_key: str = "change-me-in-production-please"
+    jwt_secret_key: str | None = None
     jwt_algorithm: str = "HS256"
     jwt_access_token_ttl_minutes: int = 60 * 24
 
     export_brand_color: str = "#0f172a"
     export_accent_color: str = "#0891b2"
+
+    @model_validator(mode="after")
+    def validate_sensitive_settings(self) -> "Settings":
+        if not self.jwt_secret_key:
+            if self.environment in {"staging", "production"}:
+                raise ValueError(
+                    "JWT_SECRET_KEY es obligatorio en staging/production."
+                )
+            self.jwt_secret_key = token_urlsafe(48)
+        return self
 
     @property
     def database_url(self) -> str:
