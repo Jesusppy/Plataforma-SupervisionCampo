@@ -115,19 +115,62 @@ Copy-Item .env.example .env
 - `JWT_SECRET_KEY`
 - `GEMINI_API_KEY` si vas a usar Gemini real
 
-3. Levanta toda la plataforma desde la raíz del repositorio.
+3. Crea también la configuración del backend a partir del ejemplo.
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+En PowerShell:
+
+```powershell
+Copy-Item backend/.env.example backend/.env
+```
+
+4. En `backend/.env`, configura la integración de IA según tu caso.
+
+Para Gemini real en desarrollo local:
+
+```dotenv
+GEMINI_API_KEY=tu_api_key
+GEMINI_MODEL=gemini-2.5-flash
+GEMINI_TRANSCRIPTION_MODEL=gemini-2.5-flash
+GEMINI_API_BASE_URL=https://generativelanguage.googleapis.com
+USE_MOCK_LLM=false
+```
+
+Para validar el flujo sin consumir cuota:
+
+```dotenv
+USE_MOCK_LLM=true
+```
+
+Notas importantes:
+
+- Cada desarrollador debe usar su propia `GEMINI_API_KEY` en `backend/.env`.
+- La cuota depende del proyecto asociado a esa key, no solo del correo con el que se creó.
+- `gemini-2.5-flash` es el modelo recomendado para esta prueba técnica.
+- Si cambias `backend/.env`, debes recrear el servicio backend para que Docker relea la configuración.
+
+5. Levanta toda la plataforma desde la raíz del repositorio.
 
 ```bash
 docker compose up --build
 ```
 
-4. Ejecuta el seed idempotente cuando el backend esté sano.
+Si ya estaba levantada y solo cambiaste `backend/.env`:
+
+```bash
+docker compose up -d --force-recreate backend
+```
+
+6. Ejecuta el seed idempotente cuando el backend esté sano.
 
 ```bash
 docker compose exec backend python scripts/seed_data.py
 ```
 
-5. Abre los servicios.
+7. Abre los servicios.
 
 - Frontend: `http://localhost:3000`
 - Backend: `http://localhost:8000`
@@ -140,6 +183,16 @@ Buckets inicializados automáticamente:
 
 - `field-attachments`
 - `report-exports`
+
+### Validación rápida para otra persona de la prueba técnica
+
+1. Iniciar sesión con el usuario demo o admin sembrado.
+2. Confirmar que cargan proyectos, visitas y plantillas.
+3. Crear o abrir una visita con adjuntos.
+4. Generar un borrador desde reportes.
+5. Exportar el informe en HTML o PDF.
+
+Si la generación con IA devuelve `429`, la configuración puede estar correcta y el problema ser la cuota de la `GEMINI_API_KEY`. En ese caso, usar otra key con cuota disponible o activar `USE_MOCK_LLM=true` para seguir validando el flujo funcional.
 
 ### Credenciales sembradas por defecto
 
