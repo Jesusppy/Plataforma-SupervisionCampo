@@ -150,6 +150,31 @@ class StorageService:
             detail="No fue posible inicializar el cliente de almacenamiento.",
         )
 
+    async def generate_internal_presigned_url(
+        self,
+        *,
+        bucket_name: str,
+        object_key: str,
+        expires_in_seconds: int = 3600,
+    ) -> str:
+        try:
+            async for client in self._get_client():
+                return await client.generate_presigned_url(
+                    "get_object",
+                    Params={"Bucket": bucket_name, "Key": object_key},
+                    ExpiresIn=expires_in_seconds,
+                )
+        except ClientError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="No fue posible generar la URL interna firmada del archivo.",
+            ) from exc
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible inicializar el cliente interno de almacenamiento.",
+        )
+
 
 def get_storage_service() -> StorageService:
     return StorageService(get_settings())

@@ -5,6 +5,7 @@ import base64
 import ipaddress
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import json
 from typing import Any
 from urllib.parse import urlparse
 
@@ -31,6 +32,20 @@ class GeminiService:
 
     def _get_headers(self) -> dict[str, str]:
         return {"Content-Type": "application/json"}
+
+    def _extract_error_detail(self, response: httpx.Response) -> str:
+        try:
+            payload = response.json()
+        except json.JSONDecodeError:
+            return response.text or "Respuesta de error sin detalle."
+
+        error = payload.get("error")
+        if isinstance(error, dict):
+            message = error.get("message")
+            if isinstance(message, str) and message.strip():
+                return message.strip()
+
+        return response.text or "Respuesta de error sin detalle."
 
     def _require_api_key(self) -> str:
         if not self.settings.gemini_api_key:
@@ -276,9 +291,20 @@ class GeminiService:
                 detail="No fue posible obtener respuesta desde Gemini.",
             )
         if response.status_code >= 400:
+            detail = self._extract_error_detail(response)
+            if response.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Gemini agotó la cuota o el límite de peticiones: {detail}",
+                )
+            if response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"Gemini no está disponible temporalmente: {detail}",
+                )
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Gemini devolvió un error: {response.text}",
+                detail=f"Gemini devolvió un error: {detail}",
             )
 
         return response.json()

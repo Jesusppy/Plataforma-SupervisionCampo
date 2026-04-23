@@ -246,7 +246,8 @@ async def generate_report_draft(
     assets: list[GenerationAsset] = []
     for visit in visits:
         for attachment in visit.attachments:
-            file_uri = await storage_service.generate_presigned_url(
+            # Gemini runs from the backend container, so it needs a backend-reachable URL.
+            file_uri = await storage_service.generate_internal_presigned_url(
                 bucket_name=attachment.bucket_name,
                 object_key=attachment.object_key,
             )
